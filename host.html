@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Mining Simulator · Teacher</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body class="host">
+<main class="wrap">
+  <header class="top"><div class="brand">⛏ Mining Simulator · Teacher view</div><div class="who" id="mode"></div></header>
+  <div id="setup" class="banner hidden"></div>
+
+  <div class="hgrid">
+    <div>
+      <section class="card qrbox">
+        <h2>Scan to join</h2>
+        <div id="qr"></div>
+        <div class="code" id="code"></div>
+        <div class="url" id="url"></div>
+      </section>
+
+      <section class="card">
+        <h2>Control the class</h2>
+        <div class="bigtimer" id="timer">–<small id="timerLabel">Lobby</small></div>
+        <div class="ctrl" style="margin-top:10px">
+          <button class="btn ghost" data-act="0">Lobby</button>
+          <button class="btn ghost" data-act="9">Close mining</button>
+          <button class="btn" data-act="1">Start Round 1</button>
+          <button class="btn" style="background:var(--purple)" data-act="2">Start Round 2</button>
+          <button class="btn gold" data-act="3" style="grid-column:1/-1">Start Bonus (tamper test)</button>
+        </div>
+        <div class="note" id="demoBox"></div>
+      </section>
+    </div>
+
+    <section class="card">
+      <div class="tabs" id="tabs"></div>
+      <div class="sum" id="sum"></div>
+      <div id="table"></div>
+      <div style="margin-top:10px"><button class="btn ghost" id="keyBtn">Show answer key</button></div>
+      <div class="key hidden" id="key"></div>
+    </section>
+  </div>
+</main>
+<script type="module" src="host.js"></script>
+</body>
+</html>

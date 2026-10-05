@@ -1,0 +1,27 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /sessions/{sid} {
+      allow read: if true;
+      allow create, update: if request.resource.data.keys().hasOnly(['round', 'endsAt'])
+                            && request.resource.data.round in [0, 1, 2, 3, 9]
+                            && request.resource.data.endsAt is number;
+      allow delete: if false;
+
+      match /results/{rid} {
+        allow read: if true;
+        allow create: if request.resource.data.keys().hasOnly(['nick', 'round', 'nonce', 'hash', 'tries', 'side', 'cid', 'ts'])
+                      && request.resource.data.nick is string
+                      && request.resource.data.nick.size() > 0 && request.resource.data.nick.size() <= 24
+                      && request.resource.data.round in [1, 2, 3]
+                      && request.resource.data.nonce is int && request.resource.data.nonce >= 0 && request.resource.data.nonce < 10000000
+                      && request.resource.data.hash is int
+                      && request.resource.data.tries is int && request.resource.data.tries >= 1 && request.resource.data.tries < 100000
+                      && request.resource.data.side in ['', 'odd', 'even']
+                      && request.resource.data.cid is string && request.resource.data.cid.size() <= 16
+                      && request.resource.data.ts == request.time;
+        allow update, delete: if false;
+      }
+    }
+  }
+}
