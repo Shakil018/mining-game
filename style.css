@@ -30,7 +30,7 @@ input:focus{outline:none;border-color:var(--blue)}
 .btn.gold{background:var(--gold)}
 .btn.green{background:var(--green)}
 .btn.ghost{background:#fff;color:var(--navy);border:2px solid var(--line)}
-.btn.block{width:100%;margin-top:10px;font-size:18px;padding:14px}
+.btn.wide{width:100%;margin-top:10px;font-size:18px;padding:14px}
 .result{margin-top:12px;border-radius:10px;padding:12px;background:#f1f3f5}
 .result .work{font-size:18px;font-weight:700;color:var(--navy)}
 .result .step{color:var(--mute);margin:2px 0 8px}
