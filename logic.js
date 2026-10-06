@@ -1,13 +1,14 @@
 // Pure game logic (no DOM). Same rule as slides 19-20:
 //   hash = last two digits of ( 11 x nonce + data hash )
 export const MULT = 11;
+export const ENABLED = [1, 2];          // the Bonus round (3) is built but hidden; add 3 here to bring it back
 export const SUBSIDY = 3.125; // current Bitcoin block subsidy in BTC (halves again around 2028)
 
 const tx = (from, to, btc, edited = false) => ({ from, to, btc, edited });
 
 export const ROUNDS = {
   1: {
-    id: 1, name: 'Round 1', phase: 'Think alone', data: 68, secs: 75,
+    id: 1, name: 'Round 1', phase: 'Think alone', data: 68, secs: 45,
     target: 'starts with 0', range: '00 – 09', test: h => h < 10,
     task: 'Find a nonce so that the hash starts with 0 (anything from 00 to 09).',
     block: { no: '957,413', prev: '0000b7f2…9d44', merkle: '7b2c4d9e…88fa', time: '2026-10-05 19:20 UTC',
@@ -96,3 +97,9 @@ export function buildBoard(results, winners) {
 export const newGen = () => Math.random().toString(36).slice(2, 8);
 export const forGen = (list, gen) => (list || []).filter(x => x.gen === gen);
 export const winnersMap = (list, gen) => { const m = {}; (list || []).forEach(w => { if (w.gen === gen) m[w.round] = w; }); return m; };
+
+/** The answer key for a round: the smallest valid nonce, with the full equation. */
+export function solutionOf(roundId) {
+  const n = validNonces(roundId, 1)[0];
+  return { ...mine(roundId, n), equation: `last two digits of ( ${MULT} × ${n} + ${ROUNDS[roundId].data} )` };
+}

@@ -18,7 +18,8 @@ service cloud.firestore {
 
     match /sessions/{sid} {
       allow read: if true;
-      allow create, update: if request.resource.data.keys().hasOnly(['round', 'phase', 'endsAt', 'gen'])
+      allow create, update: if request.resource.data.keys().hasOnly(['round', 'phase', 'endsAt', 'gen', 'roster'])
+                            && request.resource.data.roster is string && request.resource.data.roster.size() <= 12
                             && request.resource.data.gen is string
                             && request.resource.data.gen.size() > 0 && request.resource.data.gen.size() <= 12
                             && request.resource.data.round in [0, 1, 2, 3]
@@ -67,7 +68,8 @@ service cloud.firestore {
       // who has joined the lobby
       match /players/{pid} {
         allow read: if true;
-        allow create, update: if request.resource.data.keys().hasOnly(['nick', 'ts'])
+        allow create, update: if request.resource.data.keys().hasOnly(['nick', 'roster', 'ts'])
+                              && request.resource.data.roster is string && request.resource.data.roster.size() <= 12
                               && request.resource.data.nick is string
                               && request.resource.data.nick.size() > 0 && request.resource.data.nick.size() <= 24
                               && pid.size() > 0 && pid.size() <= 16

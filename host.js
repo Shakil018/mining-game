@@ -1,5 +1,5 @@
-import { ROUNDS, mine, pad2, validNonces, fmtBTC, buildBoard, newGen, forGen, winnersMap } from './logic.js';
-import { blockHTML } from './blockview.js';
+import { ROUNDS, ENABLED, mine, pad2, validNonces, fmtBTC, buildBoard, newGen, forGen, winnersMap } from './logic.js';
+import { blockHTML, applySolved } from './blockview.js';
 import { getBackend, configured } from './backend.js';
 import { qrSvg } from './qr.js';
 
@@ -24,11 +24,13 @@ try { $('qr').innerHTML = qrSvg(joinURL); } catch (e) { $('qr').textContent = 'Q
 $('newCode').onclick = () => { const u = new URL(location.href); u.searchParams.delete('s'); location.href = u.toString(); };
 
 let backend = null, session = null, resultsAll = [], winnersAll = [], players = [];
-const firstGen = newGen();                                   // used until the session has its own game id
+const firstGen = newGen(), firstRoster = newGen();           // used until the session has its own ids
 const G = () => (session && session.gen) || firstGen;
+const R = () => (session && session.roster) || firstRoster;   // who counts as "joined" (changes on Reset joined list)
+let created = false, autoEnded = '';
 const results = () => forGen(resultsAll, G());
 const winners = () => winnersMap(winnersAll, G());
-const S = patch => backend.setSession(code, { gen: G(), ...patch });
+const S = patch => backend.setSession(code, { gen: G(), roster: R(), ...patch });
 const fmt = s => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 const phase = () => (session && session.phase) || 'lobby';
 const cur = () => (session && session.round) || 0;
@@ -44,7 +46,10 @@ async function init() {
       : 'Firebase is not set up yet (see README.md). You can still try everything right now in <a href="' + location.pathname + '?demo=1">demo mode</a>: open this page and the student link in two tabs of the same browser.';
     document.querySelectorAll('#ctrlCard .btn').forEach(b => b.disabled = true);
   } else {
-    backend.watchSession(code, s => { session = s; renderAll(); });
+    backend.watchSession(code, (s, err) => {
+      session = s; renderAll();
+      if (!s && !err && !created) { created = true; S({ round: 0, phase: 'lobby', endsAt: 0 }); }   // create the class so students can join right away
+    });
     backend.watchResults(code, r => { resultsAll = r; renderBoard(); });
     backend.watchWinners(code, w => { winnersAll = w || []; renderAll(); });
     backend.watchPlayers(code, p => { players = p; renderPlayers(); });
@@ -61,7 +66,7 @@ async function init() {
 const label = r => (r === 3 ? 'Bonus' : `Round ${r}`);
 function buildRounds() {
   const box = $('rounds'); box.innerHTML = '';
-  for (const r of [1, 2, 3]) {
+  for (const r of ENABLED) {
     const row = document.createElement('div'); row.className = 'rrow'; row.dataset.r = r;
     row.innerHTML = `<button class="btn rsel">${label(r)}</button><button class="btn rstart">Start</button><button class="btn rend">End</button>`;
     row.querySelector('.rsel').onclick = () => S({ round: r, phase: 'ready', endsAt: 0 });
@@ -79,10 +84,16 @@ $('resetBoard').onclick = () => {
   backend.setSession(code, { gen: newGen(), round: 0, phase: 'lobby', endsAt: 0 });
 };
 
+$('resetPlayers').onclick = () => {
+  if (!backend) return;
+  if (!confirm('Reset the joined list?\n\nEveryone on the page is asked to join again, so only students who are really here appear.')) return;
+  backend.setSession(code, { gen: G(), roster: newGen(), round: 0, phase: 'lobby', endsAt: 0 });
+};
+
 // ---------- lobby: who has joined ----------
 function renderPlayers() {
   const box = $('players'); box.innerHTML = '';
-  const list = [...players].sort((a, b) => a.ts - b.ts);
+  const list = players.filter(p => p.roster === R()).sort((a, b) => a.ts - b.ts);
   $('pcount').textContent = String(list.length);
   $('joined').textContent = `${list.length} joined`;
   if (!list.length) { const s = document.createElement('span'); s.className = 'ph'; s.textContent = 'Waiting for the first student to scan…'; box.append(s); return; }
@@ -105,8 +116,15 @@ function renderControls() {
   tick();
 }
 
+const solved = () => phase() === 'ended' || (phase() === 'live' && session && session.endsAt > 0 && Date.now() >= session.endsAt);
+let wasSolvedHost = false;
 function tick() {
   const r = cur(), p = phase(), el = $('timer');
+  if (r && p === 'live' && session.endsAt > 0 && Date.now() >= session.endsAt + 2000) {          // time is up: end the round for everyone
+    const key = G() + ':' + r + ':' + session.endsAt;
+    if (autoEnded !== key && backend) { autoEnded = key; S({ round: r, phase: 'ended', endsAt: 0 }); }
+  }
+  if (r && p !== 'lobby' && solved() !== wasSolvedHost) { wasSolvedHost = solved(); applySolved(r, wasSolvedHost, false); }
   let big = '–', lab = 'Lobby: students are joining';
   if (r && p === 'ready') { big = fmt(ROUNDS[r].secs); lab = `${label(r)} ready · press Start`; el.classList.remove('low'); }
   else if (r && p === 'live') { const s = Math.ceil((session.endsAt - Date.now()) / 1000); big = s > 0 ? fmt(s) : '0:00'; lab = `${label(r)} · ${ROUNDS[r].phase}` + (s <= 0 ? ' · time is up, press End' : ''); el.classList.toggle('low', s <= 10); }
@@ -120,12 +138,13 @@ let shownRound = -1, shownWinner = '';
 function renderBlock() {
   const r = cur(), p = phase(), card = $('blockCard');
   if (!r || p === 'lobby') { card.innerHTML = ''; shownRound = -1; return; }
-  const R = ROUNDS[r], w = winners()[r];
+  const RR = ROUNDS[r], w = winners()[r];
   const sig = G() + ':' + r + ':' + (w ? w.cid : '');
   if (sig === shownRound) return; shownRound = sig;
   let banner = '';
-  if (w) banner = `<div class="winner">🏆 <b>${esc(w.nick)}</b> mined this block first (nonce ${w.nonce}) and earns <b>${fmtBTC(R.reward)} BTC</b>. Everyone else’s work is wasted, like in real mining.</div>`;
-  card.innerHTML = `<div class="task">${esc(R.task)}</div>${banner}${blockHTML(r, 'teacher')}`;
+  if (w) banner = `<div class="winner">🏆 <b>${esc(w.nick)}</b> mined this block first (nonce ${w.nonce}) and earns <b>${fmtBTC(RR.reward)} BTC</b>. Everyone else’s work is wasted, like in real mining.</div>`;
+  card.innerHTML = `${banner}${blockHTML(r, 'teacher')}`;
+  wasSolvedHost = solved(); applySolved(r, wasSolvedHost, false);
 }
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
@@ -151,7 +170,7 @@ function renderBoard() {
   if (!board.length) { t.innerHTML = '<div class="empty">No miners yet. Students appear here when they find a valid nonce.</div>'; }
   else {
     const tbl = document.createElement('table');
-    tbl.innerHTML = '<thead><tr><th>#</th><th>Miner</th><th>Round 1</th><th>Round 2</th><th>Bonus</th><th class="num">₿ earned</th><th class="num">Tries</th></tr></thead>';
+    tbl.innerHTML = '<thead><tr><th>#</th><th>Miner</th>' + ENABLED.map(n => `<th>${label(n)}</th>`).join('') + '<th class="num">₿ earned</th><th class="num">Tries</th></tr></thead>';
     const tb = document.createElement('tbody');
     board.forEach((p, i) => {
       const tr = document.createElement('tr'); if (i === 0 && p.btc > 0) tr.className = 'lead';
@@ -165,13 +184,13 @@ function renderBoard() {
       const num = (txt, cls = '') => { const td = document.createElement('td'); td.className = 'num ' + cls; td.textContent = txt; return td; };
       const rank = document.createElement('td'); rank.textContent = String(i + 1);
       const name = document.createElement('td'); name.textContent = p.nick;
-      tr.append(rank, name, cell(1), cell(2), cell(3), num(fmtBTC(p.btc), 'btc'), num(String(p.tries)));
+      tr.append(rank, name, ...ENABLED.map(cell), num(fmtBTC(p.btc), 'btc'), num(String(p.tries)));
       tb.append(tr);
     });
     tbl.append(tb); t.innerHTML = ''; t.append(tbl);
   }
   const key = $('key'); key.innerHTML = '';
-  for (const id of [1, 2, 3]) {
+  for (const id of ENABLED) {
     const v = validNonces(id, 4).map(n => `${n} → ${pad2(mine(id, n).hash)}`).join(', ');
     const d = document.createElement('div'); d.textContent = `${label(id)} (data hash ${ROUNDS[id].data}): first valid nonces ${v}`; key.append(d);
   }
@@ -182,7 +201,7 @@ $('keyBtn').onclick = () => { const k = $('key'); const show = k.classList.toggl
 async function simulate() {
   const r = cur();
   const names = ['Ava', 'Ben', 'Chloe', 'Dev', 'Elif', 'Farid', 'Gia', 'Hugo', 'Ines', 'Jon'];
-  for (let i = 0; i < 10; i++) await backend.join(code, { cid: 'sim' + i, nick: names[i] });
+  for (let i = 0; i < 10; i++) await backend.join(code, { cid: 'sim' + i, nick: names[i], roster: R() });
   if (!r || phase() !== 'live') return;                      // in the lobby: just fill the "joined" list
   const pick = { 1: [3, 12, 3, 3, 31, 3, 12, 3, 3, 40], 2: [12, 12, 112, 12, 12, 12, 12, 12, 12, 12], 3: [2, 11, 2, 2, 20, 2, 2, 2, 11, 2] }[r];
   for (let i = 0; i < 10; i++) {

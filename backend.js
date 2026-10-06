@@ -56,12 +56,12 @@ async function firebaseBackend() {
     },
     // lobby: students announce themselves, the teacher sees who has joined
     async join(code, rec) {
-      try { await setDoc(doc(db, 'sessions', code, 'players', rec.cid), { nick: rec.nick, ts: serverTimestamp() }); }
+      try { await setDoc(doc(db, 'sessions', code, 'players', rec.cid), { nick: rec.nick, roster: rec.roster || '', ts: serverTimestamp() }); }
       catch (e) { console.warn('join failed', e); }
     },
     watchPlayers(code, cb) {
       return onSnapshot(collection(db, 'sessions', code, 'players'),
-        snap => cb(snap.docs.map(d => { const v = d.data({ serverTimestamps: 'estimate' }); return { cid: d.id, nick: v.nick, ts: ms(v) }; })),
+        snap => cb(snap.docs.map(d => { const v = d.data({ serverTimestamps: 'estimate' }); return { cid: d.id, nick: v.nick, roster: v.roster || '', ts: ms(v) }; })),
         e => cb([], e));
     },
   };
@@ -91,7 +91,7 @@ function localBackend() {
     },
     async join(c, rec) {
       const p = read(c, 'players', {});
-      p[rec.cid] = { cid: rec.cid, nick: rec.nick, ts: (p[rec.cid] && p[rec.cid].ts) || Date.now() };
+      p[rec.cid] = { cid: rec.cid, nick: rec.nick, roster: rec.roster || '', ts: (p[rec.cid] && p[rec.cid].ts) || Date.now() };
       write(c, 'players', p); notify();
     },
     watchPlayers: (c, cb) => watch(() => cb(Object.values(read(c, 'players', {})))),

@@ -1,5 +1,5 @@
-import { ROUNDS, mine, parseNonce, whyNot, fmtBTC, winnersMap } from './logic.js';
-import { blockHTML } from './blockview.js';
+import { ROUNDS, ENABLED, mine, parseNonce, whyNot, fmtBTC, winnersMap } from './logic.js';
+import { blockHTML, applySolved } from './blockview.js';
 import { getBackend } from './backend.js';
 
 const $ = id => document.getElementById(id);
@@ -17,9 +17,10 @@ const cid = store.get('mine_cid') || (() => {
 })();
 
 let backend = null, live = false;
-let round = 0, phase = 'lobby', endsAt = 0, gen = '', winnersAll = [], mounted = 0;
+let round = 0, phase = 'lobby', endsAt = 0, gen = '', roster = null, winnersAll = [], mounted = 0, wasSolved = false;
 const W = () => winnersMap(winnersAll, gen);
 let nick = store.get('mine_nick');
+let rosterBanner = false;
 let side = store.get('mine_side');
 let tried = new Map(), last = null, msg = null;
 const subKey = () => `mine_sub_${code}_${gen}`;
@@ -29,7 +30,9 @@ let submitted = new Set();
 const fmt = s => `${Math.floor(Math.abs(s) / 60)}:${String(Math.abs(s) % 60).padStart(2, '0')}`;
 const remaining = () => Math.ceil((endsAt - Date.now()) / 1000);
 const hasRound = () => round >= 1 && round <= 3;
-const canMine = () => hasRound() && (!live || phase === 'live');
+const timeUp = () => live && phase === 'live' && endsAt > 0 && Date.now() >= endsAt;
+const isSolved = () => live && hasRound() && (phase === 'ended' || timeUp());
+const canMine = () => hasRound() && (!live || (phase === 'live' && !timeUp()));
 
 async function init() {
   backend = code ? await getBackend({ demo }) : null;
@@ -41,7 +44,6 @@ async function init() {
   if (live) {
     backend.watchSession(code, onSession);
     backend.watchWinners(code, w => { winnersAll = w || []; render(); });
-    announce();
   }
   setInterval(tick, 250);
 }
@@ -55,16 +57,17 @@ $('joinForm').addEventListener('submit', e => {
   nick = v; store.set('mine_nick', nick); enterPlay();
 });
 
-function announce() { if (live && nick) backend.join(code, { cid, nick }); }
+function announce() { if (live && nick && roster !== null) backend.join(code, { cid, nick, roster }); }
 
 function enterPlay() {
   $('join').classList.add('hidden'); $('play').classList.remove('hidden');
+  if (rosterBanner) { $('banner').classList.add('hidden'); rosterBanner = false; }
   announce(); render();
 }
 
 function buildPracticeBar() {
   const bar = $('practiceBar'); bar.classList.remove('hidden'); bar.innerHTML = '';
-  for (const id of [1, 2, 3]) {
+  for (const id of ENABLED) {
     const b = document.createElement('button');
     b.className = 'btn ghost'; b.textContent = ROUNDS[id].name; b.dataset.r = id;
     b.onclick = () => { round = id; resetTries(); render(); };
@@ -74,8 +77,14 @@ function buildPracticeBar() {
 
 function onSession(s, err) {
   if (err) { $('status').className = 'status closed'; $('status').textContent = 'Cannot reach the class server. Check your connection.'; return; }
-  const r = s ? s.round : 0, p = s ? s.phase : 'lobby', e = s ? s.endsAt : 0, g = s ? (s.gen || '') : '';
+  const r = s ? s.round : 0, p = s ? s.phase : 'lobby', e = s ? s.endsAt : 0, g = s ? (s.gen || '') : '', ro = s ? (s.roster || '') : '';
   if (g !== gen) { gen = g; submitted = loadSub(); resetTries(); }   // the teacher reset the game
+  if (roster === null) { roster = ro; announce(); }                  // first look at the class: tell the teacher we are here
+  else if (ro !== roster) {                                          // the teacher cleared the joined list: join again
+    roster = ro;
+    $('play').classList.add('hidden'); $('join').classList.remove('hidden'); $('nick').value = nick || '';
+    showBanner('The teacher cleared the joined list. Tap "Start mining" to join again.'); rosterBanner = true;
+  }
   if (r !== round) resetTries();
   round = r; phase = p; endsAt = e;
   render();
@@ -86,7 +95,7 @@ function resetTries() { tried.clear(); last = null; msg = null; }
 function mount() {
   if (!hasRound()) { $('blockMount').innerHTML = ''; mounted = 0; return; }
   if (mounted === round) return;
-  $('blockMount').innerHTML = blockHTML(round, 'student'); mounted = round;
+  $('blockMount').innerHTML = blockHTML(round, 'student'); mounted = round; wasSolved = false;
   $('tryForm').addEventListener('submit', e => {
     e.preventDefault();
     if (!canMine()) return;
@@ -102,7 +111,7 @@ document.querySelectorAll('[data-side]').forEach(b => b.addEventListener('click'
 }));
 
 $('submitBtn').addEventListener('click', async () => {
-  if (!last || !last.ok || !live || submitted.has(round) || phase !== 'live') return;
+  if (!last || !last.ok || !live || submitted.has(round) || phase !== 'live' || timeUp()) return;
   const R = ROUNDS[round];
   $('submitBtn').disabled = true;
   let c; try { c = await backend.claim(code, { nick, round, nonce: last.nonce, cid, gen }); } catch { c = 'error'; }
@@ -118,8 +127,10 @@ $('submitBtn').addEventListener('click', async () => {
 });
 
 function tick() {
-  if (!live || !hasRound() || phase !== 'live') return;
+  if (!live || !hasRound()) return;
+  if (phase !== 'live') { if (isSolved() !== wasSolved) render(); return; }
   const t = $('timer'); if (t) { const s = remaining(); t.textContent = s > 0 ? fmt(s) : 'Time is up'; t.classList.toggle('low', s <= 10); }
+  if (isSolved() !== wasSolved) render();                            // time ran out: lock the round and reveal the answer
 }
 
 function render() {
@@ -144,11 +155,9 @@ function render() {
   } else if (!hasRound()) { st.className = 'status wait'; st.textContent = 'Waiting for your teacher to choose a round…'; }
   else if (phase === 'ready') { st.className = 'status wait'; st.textContent = `${R.name} · ${R.phase}: get ready, waiting for Start…`; }
   else if (phase === 'ended') { st.className = 'status closed'; st.textContent = `${R.name} is over.`; }
-  else { st.className = 'status'; st.innerHTML = `<span>${R.name} · ${R.phase}</span><span id="timer" class="timer"></span>`; tick(); }
+  else { st.className = 'status'; st.innerHTML = `<span>${R.name} · ${R.phase}</span><span id="timer" class="timer"></span>`; const t0 = $('timer'); if (t0) { const s0 = remaining(); t0.textContent = s0 > 0 ? fmt(s0) : 'Time is up'; } }
 
   $('lobbyMsg').classList.toggle('hidden', !(live && !hasRound()));
-  $('taskBox').classList.toggle('hidden', !hasRound());
-  if (hasRound()) $('taskBox').textContent = R.task;
   mount();
 
   // winner banner (only one miner is paid)
@@ -170,18 +179,22 @@ function render() {
     const active = canMine();
     $('nonce').disabled = !active; $('tryBtn').disabled = !active;
     const hv = $('hashVal'), hw = $('hashWork');
-    if (last) { hv.textContent = last.hashStr; hv.className = 'hashval ' + (last.ok ? 'ok' : 'bad'); hw.textContent = last.working + '  →  keep the last two digits'; }
-    else { hv.textContent = '–'; hv.className = 'hashval'; hw.textContent = ''; }
+    const solved = isSolved(); wasSolved = solved;
+    applySolved(round, solved, true);
+    if (!solved) {
+      if (last) { hv.textContent = last.hashStr; hv.className = 'hashval ' + (last.ok ? 'ok' : 'bad'); hw.textContent = last.working + '  →  keep the last two digits'; }
+      else { hv.textContent = '–'; hv.className = 'hashval'; hw.textContent = ''; }
+    }
   }
 
   const res = $('result'); res.className = ''; res.textContent = '';
-  if (last && hasRound()) {
+  if (last && hasRound() && !isSolved()) {
     res.className = 'verdict ' + (last.ok ? 'ok' : 'bad');
     res.textContent = last.ok ? `✓ Valid! The hash ${R.target}.` : '✗ Not valid. ' + whyNot(round, last);
   }
 
   const sb = $('submitBtn');
-  const canSubmit = live && hasRound() && last && last.ok && phase === 'live';
+  const canSubmit = live && hasRound() && last && last.ok && phase === 'live' && !timeUp();
   sb.classList.toggle('hidden', !canSubmit);
   if (canSubmit) { sb.textContent = submitted.has(round) ? 'Already submitted ✓' : `Submit nonce ${last.nonce}`; sb.disabled = submitted.has(round); }
 

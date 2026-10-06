@@ -6,9 +6,9 @@ You see every submission live on the big screen.
 The rule is the same as slides 19 and 20:
 
 > **hash = last two digits of ( 11 × nonce + data hash )**, with data hash = 68
-> Round 1: the hash starts with 0 (00 to 09), answer: nonce **3**
-> Round 2: the hash is exactly 00, answer: nonce **12**
-> Bonus (after the tamper, data hash = 80): hash starts with 0, answer: nonce **2**
+> Round 1 (45 seconds): the hash starts with 0 (00 to 09), answer: nonce **3**
+> Round 2 (60 seconds): the hash is exactly 00, answer: nonce **12**
+> The Bonus round (tamper test, data hash = 80) is built but hidden. To bring it back, add `3` to `ENABLED` at the top of `logic.js`.
 
 **Only one miner is paid per block, like real mining.** The first student to submit a valid nonce wins the block reward
 (3.125 BTC subsidy + transaction fees, about 3.27 BTC). Everyone else who also found a valid nonce is marked "too late" and earns nothing.
@@ -44,7 +44,7 @@ Demo mode only works between tabs of one browser. For real phones, follow the st
 
 ### 1. Create the free Firebase database
 
-> **Updating an existing setup?** Re-publish `firestore.rules` (Firestore Database → Rules → paste → Publish) and upload the changed files. Do **not** overwrite your own `firebase-config.js`. Use a **new class code** after updating, because old test sessions don't have a game id.
+> **Updating an existing setup?** Re-publish `firestore.rules` (it changed again: the session and players records have a new `roster` field) (Firestore Database → Rules → paste → Publish) and upload the changed files. Do **not** overwrite your own `firebase-config.js`. Use a **new class code** after updating, because old test sessions don't have a game id.
 1. Go to <https://console.firebase.google.com>, click **Add project**, name it (for example `mining-game`). You can turn Google Analytics off.
 2. In the project, click the **`</>` (Web)** icon to register a web app. Any nickname. Skip hosting.
 3. Copy the `firebaseConfig` values (`apiKey`, `projectId`, `appId`, `authDomain`) into **`firebase-config.js`**, replacing the `PASTE_...` placeholders.
@@ -64,8 +64,8 @@ Demo mode only works between tabs of one browser. For real phones, follow the st
 
 ## Running it in class
 
-1. Before the activity, open `host.html?s=YOURCODE` (pick your own code, up to 12 letters or digits, and use it only in class). The **QR code is shown in the lobby only**, together with a **Joined** list: each student who scans appears as a small name box. Keep it on screen while students join, ideally while you are on slide 17 or 18.
-2. Slide 19: click **Round 1**. The question and the example block appear on your screen and on every phone, but nobody can mine yet. Click **Start** on the Round 1 row to begin the 75-second timer, and **End** when the round is over.
+1. Before the activity, open `host.html?s=YOURCODE` (pick your own code, up to 12 letters or digits, and use it only in class). The **QR code is shown in the lobby only**, together with a **Joined** list: each student who scans appears as a small name box. **Reset joined list** clears the names and asks everyone on the page to join again, so only students who are really here appear. Keep it on screen while students join, ideally while you are on slide 17 or 18.
+2. Slide 19: click **Round 1**. The question and the example block appear on your screen and on every phone, but nobody can mine yet. Click **Start** on the Round 1 row to begin the 45-second timer, and **End** when the round is over. The instruction sits right under the Nonce field. When the timer reaches 0, or when you press **End**, the round locks and the **solution** appears in the block (the correct nonce in the Nonce field and the filled-in equation in the Hash field). The page ends the round for you two seconds after the timer runs out.
 3. Do the same for **Round 2** (60 seconds). Each round has its own Round / Start / End buttons.
 4. Slide 20: the **leaderboard** in the bottom half shows who earned Bitcoin and who was too late, plus which nonces were found. Use it for the report-back.
 5. Optional **Bonus** runs the tamper test live: a transaction is edited, the data hash becomes 80, and everyone's old nonce stops working.
