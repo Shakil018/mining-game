@@ -71,31 +71,32 @@ function localBackend() {
   const K = (c, k) => `mine:${c}:${k}`;
   const read = (c, k, d) => { try { const v = JSON.parse(localStorage.getItem(K(c, k))); return v == null ? d : v; } catch { return d; } };
   const write = (c, k, v) => localStorage.setItem(K(c, k), JSON.stringify(v));
-  const subs = new Set();
-  const notify = () => subs.forEach(f => f());
-  addEventListener('storage', notify);
-  const watch = f => { subs.add(f); queueMicrotask(f); return () => subs.delete(f); };
+  // like Firestore, each watcher is only told about changes to ITS OWN data
+  const subs = { session: new Set(), results: new Set(), winners: new Set(), players: new Set() };
+  const notify = kind => subs[kind].forEach(f => f());
+  addEventListener('storage', e => { const kind = (e.key || '').split(':').pop(); if (subs[kind]) notify(kind); });
+  const watch = (kind, f) => { subs[kind].add(f); queueMicrotask(f); return () => subs[kind].delete(f); };
   return {
     kind: 'local',
-    watchSession: (c, cb) => watch(() => cb(read(c, 'session', null))),
-    async setSession(c, d) { write(c, 'session', { ...read(c, 'session', {}), ...d }); notify(); },
+    watchSession: (c, cb) => watch('session', () => cb(read(c, 'session', null))),
+    async setSession(c, d) { write(c, 'session', { ...read(c, 'session', {}), ...d }); notify('session'); },
     async submit(c, rec) {
       const list = read(c, 'results', []);
       if (list.some(r => r.round === rec.round && r.cid === rec.cid && r.gen === rec.gen)) return 'denied';
-      list.push({ ...rec, ts: Date.now() }); write(c, 'results', list); notify(); return 'ok';
+      list.push({ ...rec, ts: Date.now() }); write(c, 'results', list); notify('results'); return 'ok';
     },
     async claim(c, rec) {
       const w = read(c, 'winners', {}), key = `${rec.gen}_r${rec.round}`;
       if (w[key]) return 'late';
-      w[key] = { ...rec, ts: Date.now() }; write(c, 'winners', w); notify(); return 'won';
+      w[key] = { ...rec, ts: Date.now() }; write(c, 'winners', w); notify('winners'); return 'won';
     },
     async join(c, rec) {
       const p = read(c, 'players', {});
       p[rec.cid] = { cid: rec.cid, nick: rec.nick, roster: rec.roster || '', ts: (p[rec.cid] && p[rec.cid].ts) || Date.now() };
-      write(c, 'players', p); notify();
+      write(c, 'players', p); notify('players');
     },
-    watchPlayers: (c, cb) => watch(() => cb(Object.values(read(c, 'players', {})))),
-    watchResults: (c, cb) => watch(() => cb(read(c, 'results', []))),
-    watchWinners: (c, cb) => watch(() => cb(Object.values(read(c, 'winners', {})))),
+    watchPlayers: (c, cb) => watch('players', () => cb(Object.values(read(c, 'players', {})))),
+    watchResults: (c, cb) => watch('results', () => cb(read(c, 'results', []))),
+    watchWinners: (c, cb) => watch('winners', () => cb(Object.values(read(c, 'winners', {})))),
   };
 }

@@ -49,6 +49,7 @@ async function init() {
     backend.watchSession(code, (s, err) => {
       session = s; renderAll();
       if (!s && !err && !created) { created = true; S({ round: 0, phase: 'lobby', endsAt: 0 }); }   // create the class so students can join right away
+      else if (s && !s.roster && !err && !created) { created = true; S({}); }                            // older class without a joined-list id: add one
     });
     backend.watchResults(code, r => { resultsAll = r; renderBoard(); });
     backend.watchWinners(code, w => { winnersAll = w || []; renderAll(); });
@@ -100,7 +101,7 @@ function renderPlayers() {
   list.forEach(p => { const c = document.createElement('span'); c.className = 'pchip'; c.textContent = p.nick; box.append(c); });
 }
 
-function renderAll() { renderControls(); renderBlock(); renderBoard(); }
+function renderAll() { renderControls(); renderBlock(); renderBoard(); renderPlayers(); }   // players too: a reset changes the session, not the player records
 
 function renderControls() {
   const r = cur(), p = phase();
