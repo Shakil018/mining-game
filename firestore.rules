@@ -1,0 +1,79 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---- the toy hash, checked on the server so nobody can fake a result ----
+    // hash = last two digits of ( 11 x nonce + data ), data = 68 (rounds 1-2) or 80 (bonus)
+    function dataFor(r) { return r == 3 ? 80 : 68; }
+    function hashOf(n, r) { return (11 * n + dataFor(r)) % 100; }
+    function validNonce(n, r) {
+      return (r == 2 && hashOf(n, r) == 0) || ((r == 1 || r == 3) && hashOf(n, r) < 10);
+    }
+    function sessionDoc(sid) { return get(/databases/$(database)/documents/sessions/$(sid)).data; }
+    // the teacher must have started this round (and results must belong to the current game)
+    function isLive(sid, r) {
+      return sessionDoc(sid).phase == 'live' && sessionDoc(sid).round == r;
+    }
+    function roundStr(r) { return r == 1 ? '1' : (r == 2 ? '2' : '3'); }
+
+    match /sessions/{sid} {
+      allow read: if true;
+      allow create, update: if request.resource.data.keys().hasOnly(['round', 'phase', 'endsAt', 'gen'])
+                            && request.resource.data.gen is string
+                            && request.resource.data.gen.size() > 0 && request.resource.data.gen.size() <= 12
+                            && request.resource.data.round in [0, 1, 2, 3]
+                            && request.resource.data.phase in ['lobby', 'ready', 'live', 'ended']
+                            && request.resource.data.endsAt is number;
+      allow delete: if false;
+
+      // every valid result (for the leaderboard): one per student per round
+      match /results/{rid} {
+        allow read: if true;
+        allow create: if request.resource.data.keys().hasOnly(['nick', 'round', 'nonce', 'hash', 'tries', 'side', 'cid', 'gen', 'ts'])
+                      && request.resource.data.nick is string
+                      && request.resource.data.nick.size() > 0 && request.resource.data.nick.size() <= 24
+                      && request.resource.data.round in [1, 2, 3]
+                      && request.resource.data.nonce is int && request.resource.data.nonce >= 0 && request.resource.data.nonce < 10000000
+                      && request.resource.data.hash is int
+                      && request.resource.data.hash == hashOf(request.resource.data.nonce, request.resource.data.round)
+                      && validNonce(request.resource.data.nonce, request.resource.data.round)
+                      && request.resource.data.tries is int && request.resource.data.tries >= 1 && request.resource.data.tries < 100000
+                      && request.resource.data.side in ['', 'odd', 'even']
+                      && request.resource.data.cid is string && request.resource.data.cid.size() <= 16
+                      && request.resource.data.gen == sessionDoc(sid).gen
+                      && isLive(sid, request.resource.data.round)
+                      && request.resource.data.ts == request.time;
+        allow update, delete: if false;
+      }
+
+      // the block reward: only ONE document per round can ever be created (first valid claim wins)
+      match /winners/{wid} {
+        allow read: if true;
+        // document id = <game>_r<round>, so each round of each game can be won exactly once
+        allow create: if request.resource.data.keys().hasOnly(['nick', 'round', 'nonce', 'cid', 'gen', 'ts'])
+                      && request.resource.data.round in [1, 2, 3]
+                      && request.resource.data.gen == sessionDoc(sid).gen
+                      && wid == request.resource.data.gen + '_r' + roundStr(request.resource.data.round)
+                      && request.resource.data.nick is string
+                      && request.resource.data.nick.size() > 0 && request.resource.data.nick.size() <= 24
+                      && request.resource.data.nonce is int && request.resource.data.nonce >= 0 && request.resource.data.nonce < 10000000
+                      && validNonce(request.resource.data.nonce, request.resource.data.round)
+                      && request.resource.data.cid is string && request.resource.data.cid.size() <= 16
+                      && isLive(sid, request.resource.data.round)
+                      && request.resource.data.ts == request.time;
+        allow update, delete: if false;
+      }
+
+      // who has joined the lobby
+      match /players/{pid} {
+        allow read: if true;
+        allow create, update: if request.resource.data.keys().hasOnly(['nick', 'ts'])
+                              && request.resource.data.nick is string
+                              && request.resource.data.nick.size() > 0 && request.resource.data.nick.size() <= 24
+                              && pid.size() > 0 && pid.size() <= 16
+                              && request.resource.data.ts == request.time;
+        allow delete: if false;
+      }
+    }
+  }
+}

@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Mining Simulator · Setup check</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main class="wrap">
+  <header class="top"><div class="brand">⛏ Setup check</div></header>
+  <p style="margin:0 0 12px;color:#6c757d">This page tests every file and the Firebase connection and tells you what is wrong. Fix any red ✗ from the top down, then reload.</p>
+  <div id="out"></div>
+</main>
+<script type="module">
+const out = document.getElementById('out');
+const row = (ok, title, detail) => {
+  const d = document.createElement('div'); d.className = 'card';
+  const h = document.createElement('div'); h.style.fontWeight = '800';
+  h.style.color = ok === true ? '#1e7b4b' : ok === false ? '#c0392b' : '#7a5a00';
+  h.textContent = (ok === true ? '✓ ' : ok === false ? '✗ ' : '! ') + title; d.append(h);
+  if (detail) { const p = document.createElement('div'); p.className = 'note'; p.textContent = detail; d.append(p); }
+  out.append(d);
+};
+const base = location.pathname.replace(/[^/]*$/, '');
+row(null, 'You are testing: ' + location.origin + base);
+
+// 1. every file must be reachable (top level of the site, not in a subfolder)
+let missing = 0;
+for (const f of ['index.html', 'host.html', 'style.css', 'logic.js', 'blockview.js', 'qr.js', 'firebase-config.js', 'backend.js', 'student.js', 'host.js']) {
+  try {
+    const r = await fetch(f, { cache: 'no-store' });
+    if (!r.ok) { missing++; row(false, f + ' is missing (HTTP ' + r.status + ')', 'Upload it to the top level of the repository, next to debug.html.'); }
+  } catch (e) { missing++; row(false, f + ' could not be fetched', String(e)); }
+}
+if (!missing) row(true, 'All 10 site files are present');
+
+// 2. firebase-config.js content
+let cfgText = '';
+try { cfgText = await (await fetch('firebase-config.js', { cache: 'no-store' })).text(); } catch {}
+const problems = [];
+if (/[\u201C\u201D\u2018\u2019]/.test(cfgText)) problems.push('it contains curly “smart” quotes; use straight quotes (") only. This often happens when editing in TextEdit or Word.');
+if (/^\s*import\s/m.test(cfgText)) problems.push('it has an "import ..." line; delete that line (and any "initializeApp" lines).');
+if (cfgText && !/export\s+const\s+firebaseConfig/.test(cfgText)) problems.push('it does not start with "export const firebaseConfig = {".');
+if (/PASTE/.test(cfgText)) problems.push('it still contains PASTE_... placeholders.');
+if (problems.length) row(false, 'firebase-config.js needs fixing', problems.join(' '));
+
+let cfg = null;
+try { cfg = (await import('./firebase-config.js?t=' + Date.now())).firebaseConfig; row(true, 'firebase-config.js loads', 'projectId = ' + cfg.projectId); }
+catch (e) { row(false, 'firebase-config.js has an error the browser cannot read', String(e.message || e)); }
+
+// 3. the other modules
+try { const L = await import('./logic.js'); const r = L.mine(1, 3); row(r.ok && r.hashStr === '01', 'logic.js works', 'nonce 3 → hash ' + r.hashStr + (r.ok ? ' (valid)' : '')); }
+catch (e) { row(false, 'logic.js failed', String(e.message || e)); }
+try { const Q = await import('./qr.js'); Q.qrSvg('test'); row(true, 'qr.js works'); }
+catch (e) { row(false, 'qr.js failed', String(e.message || e)); }
+try { await import('./backend.js'); row(true, 'backend.js loads'); }
+catch (e) { row(false, 'backend.js failed to load', String(e.message || e)); }
+
+// 4. Firebase reachable and database set up
+if (cfg && !/PASTE/.test(JSON.stringify(cfg))) {
+  const V = '10.12.2', G = 'https://www.gstatic.com/firebasejs/' + V + '/';
+  try {
+    const [app, fs] = await Promise.all([import(G + 'firebase-app.js'), import(G + 'firebase-firestore.js')]);
+    row(true, 'Firebase library downloads (this network can reach Google)');
+    const db = fs.getFirestore(app.initializeApp(cfg));
+    const timeout = new Promise((_, rej) => setTimeout(() => rej({ code: 'timeout' }), 9000));
+    await Promise.race([fs.getDoc(fs.doc(db, 'sessions', '__check')), timeout]);
+    row(true, 'Database reachable and the rules allow reading', 'You are ready. Open host.html to start a class.');
+  } catch (e) {
+    const c = e && e.code;
+    const hint = c === 'permission-denied' ? 'The rules are not published yet. In Firebase: Build → Firestore Database → Rules → paste firestore.rules → Publish.'
+      : c === 'timeout' || c === 'unavailable' ? 'No answer from the database. Check that you created it (Build → Firestore Database → Create database) and that this network does not block Google.'
+      : c === 'failed-precondition' || c === 'not-found' ? 'The database does not exist yet. Build → Firestore Database → Create database.'
+      : 'Could not load Firebase from Google. This network may block it, or you are offline.';
+    row(false, 'Firebase check failed' + (c ? ' (' + c + ')' : ''), hint + ' ' + String((e && e.message) || ''));
+  }
+} else row(null, 'Skipped the Firebase check', 'Fix firebase-config.js first.');
+</script>
+</body>
+</html>

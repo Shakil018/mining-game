@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Mining Simulator · Teacher</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body class="host">
+<main class="wrap">
+  <header class="top">
+    <div class="brand">⛏ Mining Simulator · Teacher view</div>
+    <div class="who"><span class="codechip" id="codeChip"></span><span class="pill" id="joined" style="margin-right:8px">0 joined</span><span id="mode"></span> <button id="newCode">new class code</button></div>
+  </header>
+  <div id="setup" class="banner hidden"></div>
+
+  <section class="toprow">
+    <div>
+      <section class="card" id="ctrlCard">
+        <div class="bigtimer" id="timer">–<small id="timerLabel">Lobby</small></div>
+        <div id="rounds"></div>
+        <button class="btn ghost block" id="lobbyBtn" style="margin-top:12px;font-size:15px;padding:10px">Back to lobby (show QR code)</button>
+        <div class="note" id="demoBox"></div>
+      </section>
+    </div>
+
+    <div>
+      <section class="card qrbox hidden" id="qrCard">
+        <div class="qrimg" id="qr"></div>
+        <div class="qrtext">
+          <h2>Scan to join</h2>
+          <div class="code" id="code"></div>
+          <div class="url" id="url"></div>
+          <div class="hint">Students are joining. Pick <b>Round 1</b>, <b>Round 2</b> or <b>Bonus</b> when you are ready: the question appears here and on their phones.</div>
+        </div>
+        <div class="players" id="playersBox">
+          <h3>Joined: <span id="pcount">0</span></h3>
+          <div class="pchips" id="players"><span class="ph">Waiting for the first student to scan…</span></div>
+        </div>
+      </section>
+      <section class="card blockhost hidden" id="blockCard"></section>
+    </div>
+  </section>
+
+  <section class="card board" id="boardCard">
+    <div class="boardhead"><h2>Leaderboard · Bitcoin earned</h2><button class="btn ghost" id="resetBoard" style="font-size:14px;padding:8px 12px">Reset leaderboard</button></div>
+    <div class="sum" id="sum"></div>
+    <div id="table"></div>
+    <div style="margin-top:10px"><button class="btn ghost" id="keyBtn" style="font-size:14px;padding:8px 12px">Show answer key</button></div>
+    <div class="key hidden" id="key"></div>
+  </section>
+</main>
+<script>
+function scriptFailed(){var b=document.getElementById('setup');b.className='banner';b.innerHTML='The page scripts failed to load, so nothing can run. Open <a href="debug.html"><b>debug.html</b></a> to see exactly what is wrong.';}
+setTimeout(function(){if(!document.getElementById('code').textContent)scriptFailed();},3000);
+</script>
+<script type="module" src="host.js" onerror="scriptFailed()"></script>
+</body>
+</html>
